@@ -64,7 +64,7 @@ public:
     for (int i=0;i<3;i++)
       if ((VMax1(i)<VMin2(i))||(VMax2(i)<VMin1(i)))
         return false;
-    
+
     return true;  //all dimensional intervals are overlapping = intersection
     
   }
@@ -142,11 +142,12 @@ public:
     //just forward Euler now
     if (isFixed)
       return;  //a fixed object is immobile
-    
     /***************
      TODO
      ***************/
-    
+    COM += (comVelocity*timeStep);
+    //cout << comVelocity[0] << " " << comVelocity[1] << " " << comVelocity[2] << endl;
+    //cout << angVelocity[0] << " " << angVelocity[1] << " " << angVelocity[3] << endl;
     for (int i=0;i<currV.rows();i++)
       currV.row(i)<<QRot(origV.row(i), orientation)+COM;
   }
@@ -167,13 +168,18 @@ public:
     /***************
      TODO
      ***************/
+     for(int i = 0; i < currImpulses.size(); i++){
+       comVelocity += (currImpulses[i].second * invMasses.sum());
+     }
+     currImpulses.clear();
   }
   
   RowVector3d initStaticProperties(const double density)
   {
     //TODO: compute tet volumes and allocate to vertices
     tetVolumes.conservativeResize(T.rows());
-    
+    invMasses.conservativeResize(T.rows());
+
     RowVector3d naturalCOM; naturalCOM.setZero();
     Matrix3d IT; IT.setZero();
     for (int i=0;i<T.rows();i++){
@@ -184,7 +190,7 @@ public:
       tetVolumes(i)=std::abs(e01.dot(e02.cross(e03)))/6.0;
       
       naturalCOM+=tetVolumes(i)*tetCentroid;
-      
+      invMasses(i) = 1 / (density*tetVolumes(i));
     }
     
     totalVolume=tetVolumes.sum();
@@ -315,34 +321,37 @@ public:
     
     std::cout<<"contactNormal: "<<contactNormal<<std::endl;
     std::cout<<"penPosition: "<<penPosition<<std::endl;
-    //std::cout<<"handleCollision begin"<<std::endl;
+    std::cout<<m1.isFixed << " " << m2.isFixed <<std::endl;
+    std::cout<<"DEPTH: "<<depth<<endl;
+    std::cout<<"handleCollision begin"<<std::endl;
+
     
-    
-    //Interpretation resolution: move each object by inverse mass weighting, unless either is fixed, and then move the other. Remember to respect the direction of contactNormal and update penPosition accordingly.
+    //Interpenetration resolution: move each object by inverse mass weighting, unless either is fixed, and then move the other. Remember to respect the direction of contactNormal and update penPosition accordingly.
     RowVector3d contactPosition;
+
     if (m1.isFixed){
-      /***************
-       TODO
-       ***************/
+      cout << m2.COM << " m2 COM" << endl;
+      m2.COM += depth*contactNormal;
+      cout << m2.COM << " m2 COM" << endl;
     } else if (m2.isFixed){
-      /***************
-       TODO
-       ***************/
+      m1.COM -= depth*contactNormal;
     } else { //inverse mass weighting
-      /***************
-       TODO
-       ***************/
+      float w1 = m1.totalMass / (m1.totalMass + m2.totalMass);
+      float w2 = 1 - w1;
+
+      m2.COM += w2*depth*contactNormal;
+      m1.COM -= w1*depth*contactNormal;
     }
     
     
     //Create impulse and push them into m1.impulses and m2.impulses.
-    /***************
-     TODO
-     ***************/
-    
-    RowVector3d impulse=RowVector3d::Zero();  //change this to your result
-    
-    std::cout<<"impulse: "<<impulse<<std::endl;
+     RowVector3d velocityDiff = m2.comVelocity - m1.comVelocity;
+     float diffDotNorm = velocityDiff.dot(contactNormal);
+     float j = -(1 + CRCoeff) * diffDotNorm;
+     j = j / (m1.invMasses.sum() + m2.invMasses.sum());
+     RowVector3d impulse = RowVector3d(j * contactNormal[0], j * contactNormal[1], j * contactNormal[2]);  //change this to your result
+
+    std::cout<<"impulse: "<<impulse<<std::endl<< "-----" << endl;
     if (impulse.norm()>10e-6){
       m1.currImpulses.push_back(Impulse(contactPosition, -impulse));
       m2.currImpulses.push_back(Impulse(contactPosition, impulse));
