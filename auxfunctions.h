@@ -72,7 +72,7 @@ inline Eigen::RowVector3d QRot(const Eigen::RowVector3d p, const Eigen::RowVecto
 inline Eigen::Matrix3d Q2RotMatrix(const Eigen::RowVector4d q){
     Eigen::Matrix3d R;
     Eigen::Matrix3d corrv=q.tail(3).transpose()*q.tail(3);
-    std::cout<<"q.norm(): "<<q.norm()<<std::endl;
+    //std::cout<<"q.norm(): "<<q.norm()<<std::endl;
     
     //diagonal elements
     R(0,0)=1.0-2.0*(corrv(1,1)+corrv(2,2));

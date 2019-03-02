@@ -37,7 +37,7 @@ public:
   RowVector4d orientation; //current orientation
   RowVector3d COM;  //current center of mass
   Matrix3d invIT;  //Original *inverse* inertia tensor around the COM, defined in the rest state to the object (so to the canonical world system)
-  
+
   VectorXd tetVolumes;    //|T|x1 tetrahedra volumes
   VectorXd invMasses;     //|T|x1 tetrahedra *inverse* masses
   
@@ -126,13 +126,16 @@ public:
   
   //return the current inverted inertia tensor around the current COM. Update it by applying the orientation
   Matrix3d getCurrInvInertiaTensor(){
+
     Matrix3d R=Q2RotMatrix(orientation);
-    
+
+    Matrix3d IT = invIT.inverse();
+    Matrix3d Ie = R.transpose()*IT*R;
     /***************
      TODO
      ***************/
-    
-    return Matrix3d::Identity(3,3);  //change this to your result
+
+    return Ie.inverse();  //change this to your result
   }
   
   
@@ -146,10 +149,13 @@ public:
      TODO
      ***************/
     COM += (comVelocity*timeStep);
-    //cout << comVelocity[0] << " " << comVelocity[1] << " " << comVelocity[2] << endl;
-    //cout << angVelocity[0] << " " << angVelocity[1] << " " << angVelocity[3] << endl;
-    for (int i=0;i<currV.rows();i++)
-      currV.row(i)<<QRot(origV.row(i), orientation)+COM;
+
+    RowVector4d angularQuaternion = RowVector4d(0, angVelocity[0], angVelocity[1], angVelocity[2]);
+    orientation += 0.5 * timeStep * QMult(angularQuaternion, orientation);
+
+    for (int i=0;i<currV.rows();i++) {
+      currV.row(i) << QRot(origV.row(i), orientation) + COM;
+    }
   }
   
   
@@ -170,6 +176,9 @@ public:
      ***************/
      for(int i = 0; i < currImpulses.size(); i++){
        comVelocity += (currImpulses[i].second * invMasses.sum());
+
+       Vector3d R = currImpulses[i].first - COM;
+       angVelocity -= (currImpulses[i].second.cross(R) * getCurrInvInertiaTensor());
      }
      currImpulses.clear();
   }
@@ -220,7 +229,7 @@ public:
       
     }
     invIT=IT.inverse();
-  
+
     return naturalCOM;
     
   }
@@ -319,46 +328,62 @@ public:
   void handleCollision(Mesh& m1, Mesh& m2,const double& depth, const RowVector3d& contactNormal,const RowVector3d& penPosition, const double CRCoeff){
     
     
-    std::cout<<"contactNormal: "<<contactNormal<<std::endl;
-    std::cout<<"penPosition: "<<penPosition<<std::endl;
-    std::cout<<m1.isFixed << " " << m2.isFixed <<std::endl;
-    std::cout<<"DEPTH: "<<depth<<endl;
-    std::cout<<"handleCollision begin"<<std::endl;
+//    std::cout<<"contactNormal: "<<contactNormal<<std::endl;
+//    std::cout<<"penPosition: "<<penPosition<<std::endl;
+//    std::cout<<m1.isFixed << " " << m2.isFixed <<std::endl;
+//    std::cout<<"DEPTH: "<<depth<<endl;
+//    std::cout<<"handleCollision begin"<<std::endl;
 
     
     //Interpenetration resolution: move each object by inverse mass weighting, unless either is fixed, and then move the other. Remember to respect the direction of contactNormal and update penPosition accordingly.
     RowVector3d contactPosition;
+    contactPosition = penPosition + (depth * contactNormal);
 
     if (m1.isFixed){
-      cout << m2.COM << " m2 COM" << endl;
       m2.COM += depth*contactNormal;
-      cout << m2.COM << " m2 COM" << endl;
     } else if (m2.isFixed){
       m1.COM -= depth*contactNormal;
     } else { //inverse mass weighting
       float w1 = m1.totalMass / (m1.totalMass + m2.totalMass);
       float w2 = 1 - w1;
 
-      m2.COM += w2*depth*contactNormal;
-      m1.COM -= w1*depth*contactNormal;
+      m2.COM += w1*depth*contactNormal;
+      m1.COM -= w2*depth*contactNormal;
     }
     
     
     //Create impulse and push them into m1.impulses and m2.impulses.
-     RowVector3d velocityDiff = m2.comVelocity - m1.comVelocity;
-     float diffDotNorm = velocityDiff.dot(contactNormal);
-     float j = -(1 + CRCoeff) * diffDotNorm;
-     j = j / (m1.invMasses.sum() + m2.invMasses.sum());
+
+    //this is literally just all formulas from the slides
+     Vector3d r1 = contactPosition - m1.COM;
+     Vector3d r2 = contactPosition - m2.COM;
+
+     Vector3d v1 = m1.comVelocity + m1.angVelocity.cross(r1);
+     Vector3d v2 = m2.comVelocity + m2.angVelocity.cross(r2);
+
+     Vector3d rCrossN1 = r1.cross(contactNormal);
+     Vector3d rCrossN2 = r2.cross(contactNormal);
+
+     Vector3d augA1 = (m1.getCurrInvInertiaTensor() * (Vector3d)rCrossN1);
+     float augB1 = rCrossN1.transpose() * augA1;
+
+     Vector3d augA2 = (m2.getCurrInvInertiaTensor() * (Vector3d)rCrossN2);
+     float augB2 = rCrossN2.transpose() * augA2;
+
+     RowVector3d velocityDiff = v2 - v1;
+     double diffDotNorm = velocityDiff.dot(contactNormal);
+
+     double j = -(1 + CRCoeff) * diffDotNorm;
+     j = j / (m1.invMasses.sum() + m2.invMasses.sum() + augB1 + augB2);
      RowVector3d impulse = RowVector3d(j * contactNormal[0], j * contactNormal[1], j * contactNormal[2]);  //change this to your result
 
-    std::cout<<"impulse: "<<impulse<<std::endl<< "-----" << endl;
-    if (impulse.norm()>10e-6){
-      m1.currImpulses.push_back(Impulse(contactPosition, -impulse));
-      m2.currImpulses.push_back(Impulse(contactPosition, impulse));
-    }
-    
+     if (impulse.norm()>10e-6){
+       m1.currImpulses.push_back(Impulse(contactPosition, -impulse));
+       m2.currImpulses.push_back(Impulse(contactPosition, impulse));
+     }
+
     //std::cout<<"handleCollision end"<<std::endl;
-    
+
     //updating velocities according to impulses
     m1.updateImpulseVelocities();
     m2.updateImpulseVelocities();
@@ -402,6 +427,7 @@ public:
     
     currTime=0;
     sceneFileHandle>>numofObjects;
+    //numofObjects = 1;
     for (int i=0;i<numofObjects;i++){
       MatrixXi objT, objF;
       MatrixXd objV;
