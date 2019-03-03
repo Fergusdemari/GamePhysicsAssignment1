@@ -129,13 +129,11 @@ public:
 
     Matrix3d R=Q2RotMatrix(orientation);
 
-    Matrix3d IT = invIT.inverse();
-    Matrix3d Ie = R.transpose()*IT*R;
     /***************
      TODO
      ***************/
 
-    return Ie.inverse();  //change this to your result
+    return R.transpose()*invIT*R;  //change this to your result
   }
   
   
@@ -151,6 +149,7 @@ public:
     COM += (comVelocity*timeStep);
 
     RowVector4d angularQuaternion = RowVector4d(0, angVelocity[0], angVelocity[1], angVelocity[2]);
+
     orientation += 0.5 * timeStep * QMult(angularQuaternion, orientation);
     orientation.normalize();
     for (int i=0;i<currV.rows();i++) {
@@ -178,7 +177,6 @@ public:
        comVelocity += (currImpulses[i].second * (1 / totalMass));
 
        Vector3d R = currImpulses[i].first - COM;
-       //angVelocity -= (currImpulses[i].second.cross(R) * getCurrInvInertiaTensor());
        angVelocity += (getCurrInvInertiaTensor() * R.cross(currImpulses[i].second));
      }
      currImpulses.clear();
@@ -340,16 +338,33 @@ public:
     RowVector3d contactPosition;
     contactPosition = penPosition + (depth * contactNormal);
 
+    float m1InvMass = 1 / m1.totalMass;
+    float m2InvMass = 1 / m2.totalMass;
     if (m1.isFixed){
-      m2.COM += depth*contactNormal;
+        m2.COM += depth*contactNormal;
+        for (int i=0;i<m2.currV.rows();i++) {
+            m2.currV.row(i) += depth*contactNormal;
+        }
+        m1InvMass = 0;
     } else if (m2.isFixed){
-      m1.COM -= depth*contactNormal;
+        m1.COM -= depth*contactNormal;
+        for (int i=0;i<m1.currV.rows();i++) {
+            m1.currV.row(i) -= depth*contactNormal;
+        }
+        m2InvMass = 0;
     } else { //inverse mass weighting
-      float w1 = m1.totalMass / (m1.totalMass + m2.totalMass);
-      float w2 = 1 - w1;
+        float w1 = m2.totalMass / (m1.totalMass + m2.totalMass);
+        float w2 = m1.totalMass / (m1.totalMass + m2.totalMass);
 
-      m2.COM += w1*depth*contactNormal;
-      m1.COM -= w2*depth*contactNormal;
+        m2.COM += w2*depth*contactNormal;
+        m1.COM -= w1*depth*contactNormal;
+
+        for (int i=0;i<m2.currV.rows();i++) {
+            m2.currV.row(i) += w2*depth*contactNormal;
+        }
+        for (int i=0;i<m1.currV.rows();i++) {
+            m1.currV.row(i) -= w1*depth*contactNormal;
+        }
     }
     
     
@@ -366,17 +381,16 @@ public:
      Vector3d rCrossN2 = r2.cross(contactNormal);
 
      //Vector3d augA1 = ();
-     float aug1 = rCrossN1.transpose() * m1.getCurrInvInertiaTensor() * (Vector3d)rCrossN1;
+     float aug1 = rCrossN1.transpose() * m1.getCurrInvInertiaTensor() * r1.cross(contactNormal);
 
-     float aug2 = rCrossN2.transpose() * m2.getCurrInvInertiaTensor() * (Vector3d)rCrossN2;
+     float aug2 = rCrossN2.transpose() * m2.getCurrInvInertiaTensor() * r2.cross(contactNormal);
 
-     RowVector3d velocityDiff = v2 - v1;
-     double diffDotNorm = velocityDiff.dot(contactNormal);
+     Vector3d velocityDiff = v2 - v1;
+     float diffDotNorm = velocityDiff.dot(contactNormal);
 
-     double j = -(1 + CRCoeff) * diffDotNorm;
-     j = j / ((1 / m1.totalMass) + (1 / m2.totalMass) + aug1 + aug2);
+     float j = (-(1 + CRCoeff) * diffDotNorm) / (m1InvMass + m2InvMass + aug1 + aug2);
 
-     RowVector3d impulse = RowVector3d(j * contactNormal[0], j * contactNormal[1], j * contactNormal[2]);  //change this to your result
+     Vector3d impulse = j * contactNormal;  //change this to your result
 
      if (impulse.norm()>10e-6){
        m1.currImpulses.push_back(Impulse(contactPosition, -impulse));
