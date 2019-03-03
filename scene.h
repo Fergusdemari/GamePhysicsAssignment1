@@ -152,7 +152,7 @@ public:
 
     RowVector4d angularQuaternion = RowVector4d(0, angVelocity[0], angVelocity[1], angVelocity[2]);
     orientation += 0.5 * timeStep * QMult(angularQuaternion, orientation);
-
+    orientation.normalize();
     for (int i=0;i<currV.rows();i++) {
       currV.row(i) << QRot(origV.row(i), orientation) + COM;
     }
@@ -175,10 +175,11 @@ public:
      TODO
      ***************/
      for(int i = 0; i < currImpulses.size(); i++){
-       comVelocity += (currImpulses[i].second * invMasses.sum());
+       comVelocity += (currImpulses[i].second * (1 / totalMass));
 
        Vector3d R = currImpulses[i].first - COM;
-       angVelocity -= (currImpulses[i].second.cross(R) * getCurrInvInertiaTensor());
+       //angVelocity -= (currImpulses[i].second.cross(R) * getCurrInvInertiaTensor());
+       angVelocity += (getCurrInvInertiaTensor() * R.cross(currImpulses[i].second));
      }
      currImpulses.clear();
   }
@@ -364,17 +365,17 @@ public:
      Vector3d rCrossN1 = r1.cross(contactNormal);
      Vector3d rCrossN2 = r2.cross(contactNormal);
 
-     Vector3d augA1 = (m1.getCurrInvInertiaTensor() * (Vector3d)rCrossN1);
-     float augB1 = rCrossN1.transpose() * augA1;
+     //Vector3d augA1 = ();
+     float aug1 = rCrossN1.transpose() * m1.getCurrInvInertiaTensor() * (Vector3d)rCrossN1;
 
-     Vector3d augA2 = (m2.getCurrInvInertiaTensor() * (Vector3d)rCrossN2);
-     float augB2 = rCrossN2.transpose() * augA2;
+     float aug2 = rCrossN2.transpose() * m2.getCurrInvInertiaTensor() * (Vector3d)rCrossN2;
 
      RowVector3d velocityDiff = v2 - v1;
      double diffDotNorm = velocityDiff.dot(contactNormal);
 
      double j = -(1 + CRCoeff) * diffDotNorm;
-     j = j / (m1.invMasses.sum() + m2.invMasses.sum() + augB1 + augB2);
+     j = j / ((1 / m1.totalMass) + (1 / m2.totalMass) + aug1 + aug2);
+
      RowVector3d impulse = RowVector3d(j * contactNormal[0], j * contactNormal[1], j * contactNormal[2]);  //change this to your result
 
      if (impulse.norm()>10e-6){
