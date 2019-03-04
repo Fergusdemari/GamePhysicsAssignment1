@@ -148,15 +148,25 @@ class CustomMenu : public igl::opengl::glfw::imgui::ImGuiMenu
 				x = scene.meshes[item_current].comVelocity[0];
 				y = scene.meshes[item_current].comVelocity[1];
 				z = scene.meshes[item_current].comVelocity[2];
+				RowVector3d meshColor; meshColor << 0.2, 1, 0.2;
+				viewer->data_list[item_current].set_colors(meshColor);
 			}
 
 			ImGui::InputFloat("Xvel", &x);
 			ImGui::InputFloat("Yvel", &y);
 			ImGui::InputFloat("Zvel", &z);
 			if (ImGui::Button("Update Velocity")) {
-				cout << "button pressed" << endl;
 				scene.meshes[item_current].comVelocity = RowVector3d(x, y, z);
 			}
+			if (ImGui::Button("Add Force")) {
+				float mult = 1000000;
+				Vector3d impulse = Vector3d(x*mult, y*mult, z*mult);
+				Vector3d vertex = scene.meshes[item_current].currV.row(0);
+
+				scene.meshes[item_current].currImpulses.push_back(Impulse(vertex, impulse));
+				scene.meshes[item_current].updateImpulseVelocities();
+			}
+
 		}
 	}
 };
