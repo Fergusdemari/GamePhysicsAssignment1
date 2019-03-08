@@ -15,6 +15,7 @@ float currTime = 0;
 //initial values
 float timeStep = 0.02;
 float CRCoeff = 1.0;
+float DragCoeff = 1.0;
 float x = 0;
 float y = 0;
 float z = 0;
@@ -96,7 +97,7 @@ bool key_down(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifier
 	if (key == 'S')
 	{
 		if (!viewer.core.is_animating) {
-			scene.updateScene(timeStep, CRCoeff);
+			scene.updateScene(timeStep, CRCoeff, DragCoeff);
 			currTime += timeStep;
 			updateMeshes(viewer);
 			std::cout << "currTime: " << currTime << std::endl;
@@ -115,7 +116,7 @@ bool pre_draw(igl::opengl::glfw::Viewer &viewer)
 	using namespace std;
 
 	if (viewer.core.is_animating) {
-		scene.updateScene(timeStep, CRCoeff);
+		scene.updateScene(timeStep, CRCoeff, DragCoeff);
 		currTime += timeStep;
 		//cout <<"currTime: "<<currTime<<endl;
 		updateMeshes(viewer);
@@ -137,6 +138,7 @@ class CustomMenu : public igl::opengl::glfw::imgui::ImGuiMenu
 		if (ImGui::CollapsingHeader("Algorithm Options", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			ImGui::InputFloat("CR Coeff", &CRCoeff, 0, 0, 3);
+            ImGui::InputFloat("Drag Coeff", &DragCoeff);
 			if (ImGui::InputFloat("Time Step", &timeStep)) {
 				mgpViewer.core.animation_max_fps = (((int)1.0 / timeStep));
 			}
@@ -193,7 +195,7 @@ int main(int argc, char *argv[])
 	//load scene from file
 	scene.loadScene(std::string(argv[1]), std::string(argv[2]));
 
-	scene.updateScene(0.0, CRCoeff);
+	scene.updateScene(0.0, CRCoeff, DragCoeff);
 
 	// Viewer Settings
 	for (int i = 0; i < scene.meshes.size(); i++) {

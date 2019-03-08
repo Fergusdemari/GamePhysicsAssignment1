@@ -147,7 +147,6 @@ public:
 		COM += (comVelocity*timeStep);
 
 		RowVector4d angularQuaternion = RowVector4d(0, angVelocity[0], angVelocity[1], angVelocity[2]);
-
 		orientation += 0.5 * timeStep * QMult(angularQuaternion, orientation);
 		orientation.normalize();
 		for (int i = 0; i < currV.rows(); i++) {
@@ -234,21 +233,26 @@ public:
 
 	//Integrating the linear and angular velocities of the object
 	//You need to modify this to integrate from acceleration in the field (basically gravity)
-	void updateVelocity(double timeStep) {
+	void updateVelocity(double timeStep, double DragCoeff) {
 
 		if (isFixed)
 			return;
 
 		//integrating external forces (only gravity)
+        comVelocity = comVelocity/(1 + (timeStep * DragCoeff));
+        angVelocity = angVelocity/(1 + (timeStep * DragCoeff));
+
 		Vector3d gravity; gravity << 0, -9.8, 0.0;
 		comVelocity += gravity * timeStep;
+
+
 	}
 
 
 	//the full integration for the time step (velocity + position)
 	//You need to modify this if you are changing the integration
-	void integrate(double timeStep) {
-		updateVelocity(timeStep);
+	void integrate(double timeStep, double DragCoeff) {
+		updateVelocity(timeStep, DragCoeff);
 		updatePosition(timeStep);
 	}
 
@@ -412,11 +416,11 @@ public:
 	 2. detecting and handling collisions with the coefficient of restitutation CRCoeff
 	 3. updating the visual scene in fullV and fullT
 	 *********************************************************************/
-	void updateScene(double timeStep, double CRCoeff) {
+	void updateScene(double timeStep, double CRCoeff, double DragCoeff) {
 
 		//integrating velocity, position and orientation from forces and previous states
 		for (int i = 0; i < meshes.size(); i++)
-			meshes[i].integrate(timeStep);
+			meshes[i].integrate(timeStep, DragCoeff);
 
 		//detecting and handling collisions when found
 		//This is done exhaustively: checking every two objects in the scene.
